@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+log = "0.4.25"
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-bunyan-formatter = "0.3.10"
+tracing-subscriber = { version = "0.3.19", features = ["json", "env-filter"] }
