@@ -17,3 +17,9 @@ slog = "2.7.0"
 slog-term = "2.9.1"
 slog-async = "2.8.0"
 tracing-test = "0.2.5"
+prost = "0.13.5"
+prost-types = "0.13.5"
+tonic = "0.12.3"
+
+[build-dependencies]
+tonic-build = "0.12.3"

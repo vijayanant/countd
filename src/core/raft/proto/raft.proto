@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package raft;
+
+import "eraftpb.proto";
+
+service Raft {
+  rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse);
+  rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+  rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
+}
+
+message RequestVoteRequest {
+    eraftpb.Message message = 1;
+}
+
+message RequestVoteResponse {
+    eraftpb.Message message = 1;
+}
+
+message AppendEntriesRequest {
+    eraftpb.Message message = 1;
+    repeated eraftpb.Entry entries = 2;
+}
+
+message AppendEntriesResponse {
+    eraftpb.Message message = 1;
+}
+
+message InstallSnapshotRequest {
+    eraftpb.Message message = 1;
+}
+
+message InstallSnapshotResponse {
+    eraftpb.Message message = 1;
+}
