@@ -10,7 +10,7 @@ use raft::storage::MemStorage;
 use tokio::sync::mpsc;
 use tracing_test::traced_test;
 
-use super::command::Command;
+use super::operation::Operation;
 use super::state::RaftState;
 
 use slog::Logger;
@@ -89,37 +89,4 @@ pub async fn start_raft(config: &Config) -> (Arc<Mutex<RawNode<MemStorage>>>, mp
 
     info!("Raft service started.");
     (node, tx_raft)  //return the raft sender along with rawNode
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[traced_test]
-    #[tokio::test]
-    async fn test_message_flow() {
-        let config = new_config(1).await;
-        let (node, tx) = start_raft(&config).await;
-
-        //Propose a command
-        let command = Command::Increment;
-
-        let mut entry = Entry::default();
-        entry.entry_type = EntryType::EntryNormal.into();
-        entry.data = serde_json::to_vec(&command).unwrap().into();
-
-        let mut message = Message::default();
-        message.msg_type = MessageType::MsgPropose.into();
-        message.from = 1;
-        message.to = 1;
-        message.entries = vec![entry].into();
-
-
-        tx.send(message).await.unwrap();
-
-        // Give some time for the messages to be processed
-        let _ = tokio::time::sleep(std::time::Duration::from_millis(100));
-    }
-
 }

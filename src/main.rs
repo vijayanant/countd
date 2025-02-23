@@ -7,7 +7,7 @@ use core::raft::rpc::proto::raft_server::RaftServer;
 
 use tonic::transport::Server;
 use std::net::SocketAddr;
-
+use std::collections::HashMap;
 use core::counter::Counter;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter };
@@ -40,9 +40,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr: SocketAddr = "[::1]:56789".parse().expect("Could not parse network address and port");
     let config = new_config(1).await;
+    let mut addresses: HashMap<u64, String> = HashMap::new();
+    addresses.insert(1, addr.to_string());
     let (node, tx) = start_raft(&config).await;
     //let node = node.lock().await;
-    let raft_service = RaftService::new(node);
+    let raft_service = RaftService::new(node, addresses);
     let raft_server = RaftServer::new(raft_service);
 
     let _ = Server::builder()
