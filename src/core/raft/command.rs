@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use  tracing::debug;
+use tracing::debug;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {

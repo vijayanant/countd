@@ -1,128 +1,141 @@
-use tracing::{info, debug, instrument};
-
-
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tonic::{Request, Response, Status};
+use raft::{RawNode, eraftpb, storage::MemStorage};
 
-use raft::{Config, RawNode, Ready};
-use raft::eraftpb::{Entry, EntryType, Message, MessageType};
-use raft::storage::MemStorage;
-use tokio::sync::mpsc;
-use tracing_test::traced_test;
-
-use super::command::Command;
-use super::state::RaftState;
-
-use slog::Logger;
-use slog_term::TermDecorator;
-use slog::Drain;
-
-pub async fn start_raft() -> (Arc<Mutex<RawNode<MemStorage>>>, mpsc::Sender<Message>) {
-    info!("Starting Raft service...");
-
-    let config = Config {
-        id: 1, // Unique ID for this node
-        election_tick: 10,
-        heartbeat_tick: 1,
-        applied: 0,
-        max_size_per_msg: 1024 * 1024,
-        max_inflight_msgs: 256,
-        ..Default::default()
-    };
-
-    // Initialize a Raft state store.
-    let storage = MemStorage::new();
-
-    // Create a slog logger
-    let decorator = TermDecorator::new().stderr().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    let logger = Logger::root(drain, slog::o!());
+use crate::core::raft::rpc::proto::{
+    raft_server::Raft,
+    RequestVoteRequest, RequestVoteResponse,
+    AppendEntriesRequest, AppendEntriesResponse,
+    InstallSnapshotRequest, InstallSnapshotResponse,
+};
 
 
-    let (tx_raft, mut rx_raft) = mpsc::channel::<Message>(100); // For Raft messages to RawNode
-    let (tx_network, mut rx_network) = mpsc::channel::<Message>(100); // For RawNode messages to network
-
-
-    // Create a Raft node.
-    let node = RawNode::new(&config, storage, &logger).unwrap();
-
-    //we cant move the node into the tokio::spawn closure and also
-    //return it from the start_raft() function. We will wrap the  RawNode
-    //in an Arc<Mutex<>> , and then  we can clone it and move the clone into
-    //the tokio::spawn closure. The original will be returned from start_raft().
-    let node = Arc::new(Mutex::new(node));
-    let node_clone = node.clone(); // Clone
-
-    // Raft message receiver task
-    tokio::spawn(async move {
-
-        //#[instrument(fields(message_type = ?msg.msg_type))]
-        while let Some(msg) = rx_raft.recv().await {
-            debug!("Received message: {:?}", msg); // Trace the received message
-
-            let mut node  = node_clone.lock().await;
-            node.step(msg).unwrap();
-            let ready = node.ready();
-
-            debug!("Ready state: {:?}", ready); // Trace the ready state
-            if !ready.messages().is_empty() {
-                for msg in ready.messages() {
-                    // send messages to network task
-                    tx_network.send(msg.clone()).await.unwrap();
-                }
-            }
-            node.advance(ready);
-        }
-    });
-
-    // network sender task
-    let node_clone = node.clone(); //clone again!!
-    tokio::spawn(async move {
-        while let Some(msg) = rx_network.recv().await {
-            debug!("Sending message (placeholder): {:?}", msg); // Trace message being sent
-            let node = node_clone.lock().await;
-            //eventually send the messages through grpc
-        }
-    });
-
-    info!("Raft service started.");
-    (node, tx_raft)  //return the raft sender along with rawNode
+pub struct RaftService {
+    node: Arc<Mutex<RawNode<MemStorage>>>,
 }
 
+impl RaftService {
+    pub fn new(node: Arc<Mutex<RawNode<MemStorage>>>) -> Self {
+        RaftService {node }
+    }
+}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[tonic::async_trait]
+impl Raft for RaftService {
+    async fn request_vote(
+        &self,
+        request: Request<RequestVoteRequest>,
+    ) -> Result<Response<RequestVoteResponse>, Status> {
 
-    #[tokio::test]
-    async fn test_raft_node_creation() {
-        let _node = start_raft().await;
+        let req = request.into_inner();
+        tracing::debug!("Got request_vote request: {:?}", req);
+
+        match req.message {
+            Some(eraft_msg) => {
+                let ready = {
+                    let mut node = self.node.lock().await;
+                    node.step(eraft_msg)
+                };
+                match ready {
+                    Ok(ready) => {
+                        //TODO process ready request
+                        tracing::debug!("ready struct: {:?}", ready);
+                        //Dummy response
+                        let reply_msg = eraftpb::Message::default();
+                        let res = RequestVoteResponse {
+                            message: Some(reply_msg),
+                        };
+                        Ok(Response::new(res))
+                    }
+                    Err(e) =>{
+                        tracing::error!("Failed to step raft node: {:?}", e);
+                        return Err(Status::internal("Raft node step failed"));
+                    }
+                }
+            }
+            None => {
+                tracing::error!("RequestVoteRequest message is missing");
+                return Err(Status::invalid_argument("RequestVoteRequest message is missing"));
+            }
+        }
     }
 
-    #[traced_test]
-    #[tokio::test]
-    async fn test_message_flow() {
-        let (node, tx) = start_raft().await;
+    async fn append_entries(
+        &self,
+        request: Request<AppendEntriesRequest>,
+    ) -> Result<Response<AppendEntriesResponse>, Status> {
 
-        //Propose a command
-        let command = Command::Increment;
+        let req = request.into_inner();
+        tracing::debug!("Got append_entries request: {:?}", req);
 
-        let mut entry = Entry::default();
-        entry.entry_type = EntryType::EntryNormal;
-        entry.data = serde_json::to_vec(&command).unwrap().into();
-
-        let mut message = Message::default();
-        message.msg_type = MessageType::MsgPropose;
-        message.from = 1;
-        message.to = 1;
-        message.entries = vec![entry].into();
-
-
-        tx.send(message).await.unwrap();
-
-        // Give some time for the messages to be processed
-        tokio::time::sleep(std::time::Duration::from_millis(100));
+        match req.message {
+            Some(eraft_msg) => {
+                let ready = {
+                    let mut node = self.node.lock().await;
+                    node.step(eraft_msg)
+                };
+                match ready {
+                    Ok(ready) => {
+                        //TODO Process ready request
+                        tracing::debug!("ready struct: {:?}", ready);
+                        //dummy response
+                        let res_msg = eraftpb::Message::default();
+                        let res = AppendEntriesResponse {
+                            message: Some(res_msg),
+                        };
+                        Ok(Response::new(res))
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to step raft node: {:?}", e);
+                        return Err(Status::internal("Raft node step failed"));
+                    }
+                }
+            }
+            None => {
+                tracing::error!("AppendEntriesRequest message is missing");
+                return Err(Status::invalid_argument("AppendEntriesRequest message is missing"));
+            }
+        }
     }
 
+    async fn install_snapshot(
+        &self,
+        request: Request<InstallSnapshotRequest>,
+    ) -> Result<Response<InstallSnapshotResponse>, Status> {
+
+        let req = request.into_inner();
+        tracing::debug!("Got install_snapshot request: {:?}", req);
+
+        match req.message {
+            Some(eraft_msg) => {
+                let ready = {
+                    let mut node = self.node.lock().await;
+                    node.step(eraft_msg)
+                };
+                match ready {
+                    Ok(ready) => {
+                        // TODO: Process ready request
+                        tracing::debug!("ready struct: {:?}", ready);
+
+                        //dummy response
+                        let res_msg = eraftpb::Message::default();
+                        let res = InstallSnapshotResponse {
+                            message: Some(res_msg),
+                        };
+                        Ok(Response::new(res))
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to step raft node: {:?}", e);
+                        return Err(Status::internal("Raft node step failed"));
+                    }
+                }
+            }
+            None => {
+                tracing::error!("InstallSnapshot message is missing");
+                return Err(Status::invalid_argument("InstallSnapshot message is missing"));
+            }
+        }
+
+    }
 }

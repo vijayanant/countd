@@ -4,22 +4,26 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-raft = "0.7.0" 
+#raft = { version = "0.7.0", default-features = false, features = ["prost-codec"]} 
+raft = { path = "../raft-rs", default-features = false, features = ["prost-codec"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4.25"
 tracing = "0.1.41"
+tracing-test = "0.2.5"
 tracing-appender = "0.2.3"
 tracing-bunyan-formatter = "0.3.10"
 tracing-subscriber = { version = "0.3.19", features = ["json", "env-filter"] }
 slog = "2.7.0"
 slog-term = "2.9.1"
 slog-async = "2.8.0"
-tracing-test = "0.2.5"
 prost = "0.13.5"
 prost-types = "0.13.5"
 tonic = "0.12.3"
+
+[patch.crates-io]
+#raft-proto = { git = "https://github.com/tikv/raft-rs.git", branch = "master", features = ["prost-codec"], default-features = false }
 
 [build-dependencies]
 tonic-build = "0.12.3"

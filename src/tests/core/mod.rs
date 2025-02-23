@@ -1,3 +1,3 @@
 #[cfg (test)]
 pub mod counter;
-//pub mod raft;
+pub mod raft;
