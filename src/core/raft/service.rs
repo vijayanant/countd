@@ -90,23 +90,22 @@ impl RaftService {
 
                     match op {
                         Operation::Increment => {
-                            tracing::debug!("Incrementing, Current state: {:?}", 0);
                             state.increment();
                         },
                         Operation::Decrement => {
-                            tracing::debug!("Decrementing, Current state: {:?}", 0);
-                            state.decrement();
+                            if let Err(e) = state.decrement() {
+                                tracing::error!("Error decrementing counter: {:?}", e);
+                            }
                         },
                         Operation::IncrementBy(val) => {
-                            tracing::debug!("IncrementingBy: {:?}, Current state: {:?}", val, 0);
                             state.increment_by(val);
                         },
                         Operation::DecrementBy(val) => {
-                            tracing::debug!("DecrementingBy: {:?}, Current state: {:?}", val, 0);
-                            state.decrement_by(val);
+                            if let Err(e) = state.decrement_by(val) {
+                                tracing::error!("Error decrementing counter by: {:?}", e);
+                            }
                         },
                         Operation::Set(val) => {
-                            tracing::debug!("Set: {:?}, Current state: {:?}", val, 0);
                             state.set(val)
                         },
                     }
@@ -237,5 +236,29 @@ impl Raft for RaftService {
             }
         }
 
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use raft::prelude::Ready;
+        #[tokio::test]
+    async fn test_process_ready_no_messages_no_entries() {
+        // 1. Set up RaftService using the helper method
+        let service = create_raft_service(1); // Use node ID 1
+
+        // 2. Create an empty Ready struct
+        let ready = Ready::default();
+
+        // 3. Call process_ready
+        let result = service.process_ready(ready).await;
+
+        // 4. Verify that process_ready returns Ok
+        assert!(result.is_ok());
+
+        // 5. Verify that the state machine is unchanged (initially 0)
+        let state = service.state_machine.lock().await;
+        assert_eq!(state.value, 0);
     }
 }
