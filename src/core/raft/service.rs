@@ -243,10 +243,12 @@ impl Raft for RaftService {
 #[cfg(test)]
 mod tests {
     use raft::prelude::Ready;
+    use crate::create_raft_service;
+
         #[tokio::test]
     async fn test_process_ready_no_messages_no_entries() {
         // 1. Set up RaftService using the helper method
-        let service = create_raft_service(1); // Use node ID 1
+        let service = create_raft_service(1).unwrap(); // Use node ID 1
 
         // 2. Create an empty Ready struct
         let ready = Ready::default();

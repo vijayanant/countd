@@ -65,6 +65,8 @@ impl Counter {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::counter::{Counter, CounterError};
+
     #[test]
     fn test_increment() {
         let mut counter = Counter::new(0);

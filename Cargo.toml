@@ -23,6 +23,7 @@ prost-types = "0.13.5"
 tonic = "0.12.3"
 thiserror = "2.0.11"
 clap = { version = "4.5.30", features = ["derive"] }
+tracing-slog = "0.3.0"
 
 [patch.crates-io]
 #raft-proto = { git = "https://github.com/tikv/raft-rs.git", branch = "master", features = ["prost-codec"], default-features = false }

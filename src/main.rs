@@ -12,15 +12,16 @@ use tokio::sync::Mutex;
 use std::net::SocketAddr;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::io;
 use core::counter::Counter;
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter };
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry, EnvFilter, fmt};
 use tracing_bunyan_formatter::{JsonStorageLayer, BunyanFormattingLayer};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value_t = 0)]
+    #[arg(short, long, default_value_t = 1)]
     id: u64,
     #[arg(short, long, default_value_t = String::from("127.0.0.1:56789"))]
     address: String,
@@ -28,12 +29,10 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = parse_command_line_args();
-
     init_tracing();
 
-    let raft_service = create_raft_service(args.id);;
-
+    let args = parse_command_line_args();
+    let raft_service = create_raft_service(args.id)?;
     run_grpc_server(args.address, raft_service).await?;
 
     Ok(())
@@ -46,22 +45,19 @@ fn parse_command_line_args() -> Args {
 fn init_tracing() {
     let app_name = concat!(env!("CARGO_PKG_NAME"), "-", env!("CARGO_PKG_VERSION")).to_string();
     let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new("info"))
+        .or_else(|_| EnvFilter::try_new("INFO"))
         .unwrap();
 
     let file_appender = tracing_appender::rolling::daily("./logs", "trace.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let file_layer = fmt::Layer::new().with_writer(file_appender);
 
-    let bunyan_formatting_layer = BunyanFormattingLayer::new(app_name, non_blocking);
-
-    if let Err(e) = tracing_subscriber::registry()
+    //tracing_subscriber::registry()
+    let subscriber = Registry::default()
         .with(env_filter)
-        .with(JsonStorageLayer)
-        .with(bunyan_formatting_layer) // Remove this line if you don't need file output
-        .try_init() {
-            eprintln!("Error initializing tracing: {}", e);
-            panic!("Failed to initialise tracing")
-    }
+        .with(file_layer);
+    let _ = tracing::subscriber::set_global_default(subscriber).unwrap();
+
+
 }
 
 
