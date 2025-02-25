@@ -1,6 +1,8 @@
 use tracing::instrument;
 use thiserror::Error;
 
+use crate::core::raft::Operation;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Counter {
     pub value: u64,
@@ -60,6 +62,27 @@ impl Counter {
     pub fn set(&mut self, new_value: u64) {
         self.value = new_value;
         tracing::info!("Counter set to: {}", self.value);
+    }
+
+    pub fn apply_operation(&mut self, op: Operation) -> Result<(), CounterError> {
+        match op {
+            Operation::Increment => {
+                self.increment();
+            }
+            Operation::Decrement => {
+                self.decrement()?;
+            }
+            Operation::IncrementBy(val) => {
+                self.increment_by(val);
+            }
+            Operation::DecrementBy(val) => {
+                self.decrement_by(val)?;
+            }
+            Operation::Set(val) => {
+                self.set(val);
+            }
+        }
+        Ok(())
     }
 }
 

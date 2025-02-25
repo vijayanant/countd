@@ -86,34 +86,27 @@ impl RaftService {
             match serde_json::from_slice::<Operation>(&entry.data) {
                 Ok(op) => {
                     tracing::debug!("Operation: {:?}", op);
-                    let mut state = self.state_machine.lock().await;
+                    // TODO: Investigate why deserialization produces &u64 and fix the root cause.
+                    let op_clone = op.clone();
 
-                    match op {
-                        Operation::Increment => {
-                            state.increment();
-                        },
-                        Operation::Decrement => {
-                            if let Err(e) = state.decrement() {
-                                tracing::error!("Error decrementing counter: {:?}", e);
-                            }
-                        },
-                        Operation::IncrementBy(val) => {
-                            state.increment_by(val);
-                        },
-                        Operation::DecrementBy(val) => {
-                            if let Err(e) = state.decrement_by(val) {
-                                tracing::error!("Error decrementing counter by: {:?}", e);
-                            }
-                        },
-                        Operation::Set(val) => {
-                            state.set(val)
-                        },
+                    let mut state = self.state_machine.lock().await;
+                    if let Err(e) = state.apply_operation(op_clone) {
+                        tracing::error!("Error applying operation {:?}", op);
+                        return Err(Status::internal(format!("Error applying operation {:?}", e)));
                     }
                 }
                 Err(e) => {
                     tracing::error!("Error decoding entry data: {:?}", e);
+                    return Err(Status::internal(format!("Error decoding entry data: {:?}", e)));
                 }
             }
+
+            // Update applied index
+            let mut node = self.node.lock().await;
+            if let Err(e) = node.apply_conf_change(&eraftpb::ConfChange::default()){
+                    tracing::error!("Error applying conf change: {:?}", e);
+                    return Err(Status::internal(format!("Error applying conf change: {:?}", e)));
+            }; // TODO applying default ... this will change
         }
         Ok(())
     }
@@ -242,25 +235,67 @@ impl Raft for RaftService {
 
 #[cfg(test)]
 mod tests {
-    use raft::prelude::Ready;
-    use crate::create_raft_service;
+    //use raft::prelude::Ready;
+    //use crate::create_raft_service;
+    use super::*;
+    use raft::eraftpb;
+    use serde_json;
+    use tokio::sync::Mutex;
 
-        #[tokio::test]
-    async fn test_process_ready_no_messages_no_entries() {
-        // 1. Set up RaftService using the helper method
-        let service = create_raft_service(1).unwrap(); // Use node ID 1
+    fn setup_raft_service() -> RaftService {
+        let mut config = raft::Config::default();
+        config.id = 1;
+        let conf_state = eraftpb::ConfState {
+            voters: vec![1], // Add node ID 1 as a voter
+            ..Default::default()
+        };
 
-        // 2. Create an empty Ready struct
-        let ready = Ready::default();
+        let storage = raft::storage::MemStorage::new();
+        storage.initialize_with_conf_state(conf_state);
 
-        // 3. Call process_ready
-        let result = service.process_ready(ready).await;
 
-        // 4. Verify that process_ready returns Ok
-        assert!(result.is_ok());
+        let state_machine = Mutex::new(Counter::new(0));
+        let raw_node = Mutex::new(
+            raft::RawNode::new(
+                &config,
+                storage,
+                &slog::Logger::root(
+                    slog::Discard,
+                    slog::o!()))
+            .unwrap());
 
-        // 5. Verify that the state machine is unchanged (initially 0)
-        let state = service.state_machine.lock().await;
-        assert_eq!(state.value, 0);
+        RaftService {
+            state_machine,
+            node: std::sync::Arc::new(raw_node),
+            node_addresses: std::collections::HashMap::new(),
+        }
     }
+
+    #[tokio::test]
+    async fn test_apply_committed_entries() {
+        let service = setup_raft_service();
+
+        let op1    = Operation::IncrementBy(10);
+        let data1  = serde_json::to_vec(&op1).unwrap();
+        let entry1 = eraftpb::Entry {
+            data: data1,
+            ..Default::default()
+        };
+
+        let op2    = Operation::DecrementBy(5);
+        let data2  = serde_json::to_vec(&op2).unwrap();
+        let entry2 = eraftpb::Entry {
+            data: data2,
+            ..Default::default()
+        };
+
+        let entries = vec![entry1, entry2];
+        service.apply_committed_entries(&entries).await.unwrap();
+
+        let state = service.state_machine.lock().await;
+        assert_eq!(state.value, 5);
+    }
+
+
+
 }
