@@ -1,7 +1,8 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_files = &[
         "src/core/raft/proto/raft.proto",
-        "src/core/raft/proto/eraftpb.proto"
+        "src/core/raft/proto/eraftpb.proto",
+        "src/core/raft/proto/rustproto.proto",
     ];
 
     tonic_build::configure()

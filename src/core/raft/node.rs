@@ -28,24 +28,13 @@ fn new_config (node_id: u64) -> Config {
     info!("Creating new Raft config for node {}", node_id);
     Config {
         id: node_id, // Unique ID for this node
-        election_tick: 10,
-        heartbeat_tick: 1,
+        election_tick: 100,
+        heartbeat_tick: 10,
         applied: 0,
         max_size_per_msg: 1024 * 1024,
         max_inflight_msgs: 256,
         ..Default::default()
     }
-}
-
-#[instrument(name = "create_raft_node", level = "info")]
-fn create_raft_node(node_id: u64) -> Result<Arc<Mutex<RawNode<MemStorage>>>, raft::Error> {
-
-    info!("Creating Raft node with ID: {}", node_id);
-    let config = new_config(node_id);
-    let node   = create_raft_rawnode(&config)?;
-
-    info!("Raft node created successfully.");
-    Ok(node)
 }
 
 #[instrument(name = "create_raft_service", level = "info")]
@@ -58,12 +47,34 @@ pub fn create_raft_service(node_id: u64) -> Result<RaftService, raft::Error> {
     Ok(service)
 }
 
+
+#[instrument(name = "create_raft_node", level = "info")]
+fn create_raft_node(node_id: u64) -> Result<Arc<Mutex<RawNode<MemStorage>>>, raft::Error> {
+
+    info!("Creating Raft node with ID: {}", node_id);
+    let config = new_config(node_id);
+    let node   = create_raft_rawnode(node_id, &config)?;
+
+    info!("Raft node created successfully.");
+    Ok(node)
+}
+
 #[instrument(name = "create_raft_rawnode", level = "info", skip(config))]
-fn create_raft_rawnode(config: &Config) -> Result<Arc<Mutex<RawNode<MemStorage>>>, raft::Error> {
+fn create_raft_rawnode(node_id: u64, config: &Config) -> Result<Arc<Mutex<RawNode<MemStorage>>>, raft::Error> {
     info!("Creating Raft RawNode...");
 
-    // Initialize a Raft state store.
-    let storage   = MemStorage::new();
+    //setting up static cluster
+    //let all_node_ids = vec![node_id];
+    let all_node_ids = vec![1,2,3];
+
+    debug!("Node ID: {}", node_id);
+    debug!("Voter IDs: {:?}", vec![node_id]); // Or however your voter ids are set
+    debug!("All Node IDs: {:?}", all_node_ids);
+    debug!("Config: id={}, election_tick={}, heartbeat_tick={}, ...", config.id, config.election_tick, config.heartbeat_tick, /* ... other config fields ... */);
+    //let storage = MemStorage::new();
+    let storage = MemStorage::new_with_conf_state((all_node_ids.clone(), all_node_ids.clone())); // Initialize ConfState
+
+    //debug!("ConfState: {:?}", storage.get_conf_state());
 
     let drain  = TracingSlogDrain.filter_level(slog::Level::Debug);
     let logger = Logger::root(drain.fuse(), slog::o!());

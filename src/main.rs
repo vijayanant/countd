@@ -23,8 +23,10 @@ use tracing_bunyan_formatter::{JsonStorageLayer, BunyanFormattingLayer};
 struct Args {
     #[arg(short, long, default_value_t = 1)]
     id: u64,
-    #[arg(short, long, default_value_t = String::from("127.0.0.1:56789"))]
-    address: String,
+    #[arg(short, long, default_value_t = String::from("127.0.0.1"))]
+    bind_address: String,
+    #[arg(short, long, default_value_t = 56789)] //Default port to match default address
+    port: u16,
 }
 
 #[tokio::main]
@@ -33,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = parse_command_line_args();
     let raft_service = create_raft_service(args.id)?;
-    run_grpc_server(args.address, raft_service).await?;
+    run_grpc_server(&args, raft_service).await?;
 
     Ok(())
 }
@@ -49,22 +51,22 @@ fn init_tracing() {
         .unwrap();
 
     let file_appender = tracing_appender::rolling::daily("./logs", "trace.log");
-    let file_layer = fmt::Layer::new().with_writer(file_appender);
+    //let file_layer = fmt::Layer::new().with_writer(file_appender);
 
     //tracing_subscriber::registry()
     let subscriber = Registry::default()
         .with(env_filter)
-        .with(file_layer);
+        .with(fmt::Layer::new().with_writer(std::io::stdout));
+        //.with(file_layer);
     let _ = tracing::subscriber::set_global_default(subscriber).unwrap();
 
 
 }
 
+async fn run_grpc_server(args: &Args, raft_service: RaftService)->Result<(), Box<dyn std::error::Error>> {
 
-
-async fn run_grpc_server(address: String, raft_service: RaftService)->Result<(), Box<dyn std::error::Error>> {
-
-    let addr: SocketAddr = address.parse()?;
+    let addr: SocketAddr = format!("{}:{}", args.bind_address, args.port).parse()?;
+    tracing::info!("Server listening on {:?}", addr);
     println!("Server listening on {:?}", addr);
 
     let raft_server = RaftServer::new(raft_service);
